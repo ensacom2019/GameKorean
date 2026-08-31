@@ -27,12 +27,12 @@ dist/
 Thumbs.db
 
 # Unity generated folders
-unity_font_bundle_project/Library/
-unity_font_bundle_project/Logs/
-unity_font_bundle_project/Temp/
-unity_font_bundle_project/obj/
-unity_font_bundle_project/UserSettings/
-unity_font_bundle_project/AssetBundles/
+tools/unity-font-bundle/Library/
+tools/unity-font-bundle/Logs/
+tools/unity-font-bundle/Temp/
+tools/unity-font-bundle/obj/
+tools/unity-font-bundle/UserSettings/
+tools/unity-font-bundle/AssetBundles/
 
 # Unused local font/schema experiments
 src/gameko/assets/NotoSansKR-Medium.ttf
@@ -41,4 +41,3 @@ src/gameko/assets/gameko_tmp_text_schema_u6000_3_23f1
 # GameKO output created beside a translated game
 gameko_project/
 GameKO.Fonts/
-

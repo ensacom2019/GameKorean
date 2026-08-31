@@ -179,7 +179,7 @@ GameKO는 선택한 게임 폴더에 `gameko_project` 작업 폴더를 만듭니
 
 ```powershell
 python -m pip install -e .
-./run_gui.bat
+./scripts/run_gui.bat
 ```
 
 오프라인 Argos Translate까지 설치하려면 다음 명령을 사용합니다.
@@ -192,7 +192,7 @@ Windows 배포본 빌드:
 
 ```powershell
 python -m pip install -e ".[build]"
-./build_windows.ps1
+./scripts/build_windows.ps1
 ```
 
 완성된 프로그램은 `dist/GameKO/GameKO.exe`에 생성됩니다. 빌드 스크립트는 EXE의 import와 GUI 초기화, Unity 정적 패치 기본 흐름을 자동 점검합니다.
@@ -217,4 +217,4 @@ GameKO는 MIT License로 배포됩니다. 엔진 처리에는 다음 프로젝�
 - [UndertaleModTool](https://github.com/UnderminersTeam/UndertaleModTool)
 - [Argos Translate](https://github.com/argosopentech/argos-translate)
 
-포함된 구성 요소의 상세 라이선스는 [THIRD_PARTY.md](THIRD_PARTY.md)를 확인하세요.
+포함된 구성 요소의 상세 라이선스는 [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md)를 확인하세요.

@@ -1,18 +1,11 @@
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location -LiteralPath $projectRoot
 python -m pip install -e '.[build]'
-python -m PyInstaller --noconfirm --clean --windowed --name GameKO --paths src `
-    --icon "src/gameko/assets/AINFORGE.ico" `
-    --version-file "windows_version_info.txt" `
-    --collect-data UnityPy `
-    --add-data "src/gameko/assets/NotoSansCJKkr-Regular.otf;gameko/assets" `
-    --add-data "src/gameko/assets/NotoSansKR-OFL.txt;gameko/assets" `
-    --add-data "src/gameko/assets/gameko_notosanscjkkr_sdf_u6000_3_23f1;gameko/assets" `
-    --add-data "src/gameko/assets/AINFORGE.png;gameko/assets" `
-    launcher.py
+python -m PyInstaller --noconfirm --clean "packaging/windows/GameKO.spec"
 Copy-Item -LiteralPath "$projectRoot\README.md" -Destination "$projectRoot\dist\GameKO\README.md" -Force
-Copy-Item -LiteralPath "$projectRoot\THIRD_PARTY.md" -Destination "$projectRoot\dist\GameKO\THIRD_PARTY.md" -Force
+New-Item -ItemType Directory -Force "$projectRoot\dist\GameKO\docs" | Out-Null
+Copy-Item -LiteralPath "$projectRoot\docs\THIRD_PARTY.md" -Destination "$projectRoot\dist\GameKO\docs\THIRD_PARTY.md" -Force
 Copy-Item -LiteralPath "$projectRoot\src\gameko\assets\NotoSansKR-OFL.txt" -Destination "$projectRoot\dist\GameKO\NotoSansKR-OFL.txt" -Force
 Copy-Item -LiteralPath "$projectRoot\src\gameko\assets\AINFORGE.png" -Destination "$projectRoot\dist\GameKO\AINFORGE.png" -Force
 $smoke = Start-Process -FilePath "$projectRoot\dist\GameKO\GameKO.exe" -ArgumentList '--smoke-test' -WorkingDirectory "$projectRoot\dist\GameKO" -WindowStyle Hidden -PassThru
