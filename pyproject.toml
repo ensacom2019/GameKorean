@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gameko"
+version = "0.1.0"
+description = "Unity, GameMaker, RPG Maker game localization assistant for Korean"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "AINFORGE" }]
+dependencies = [
+    "UnityPy>=1.25,<1.26",
+]
+
+[project.optional-dependencies]
+offline = ["argostranslate>=1.9"]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+gameko = "gameko.cli:main"
+gameko-gui = "gameko.gui:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+gameko = [
+    "assets/NotoSansCJKkr-Regular.otf",
+    "assets/NotoSansKR-OFL.txt",
+    "assets/gameko_notosanscjkkr_sdf_u6000_3_23f1",
+    "assets/AINFORGE.png",
+    "assets/AINFORGE.ico",
+]

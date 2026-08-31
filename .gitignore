@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Build outputs
+build/
+dist/
+*.zip
+
+# Codex / local attachments
+.codex-remote-attachments/
+
+# IDE and OS
+.idea/
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+
+# Unity generated folders
+unity_font_bundle_project/Library/
+unity_font_bundle_project/Logs/
+unity_font_bundle_project/Temp/
+unity_font_bundle_project/obj/
+unity_font_bundle_project/UserSettings/
+unity_font_bundle_project/AssetBundles/
+
+# Unused local font/schema experiments
+src/gameko/assets/NotoSansKR-Medium.ttf
+src/gameko/assets/gameko_tmp_text_schema_u6000_3_23f1
+
+# GameKO output created beside a translated game
+gameko_project/
+GameKO.Fonts/
+
