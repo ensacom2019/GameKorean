@@ -21,6 +21,10 @@ SOURCE_LANGUAGES = {"auto", "ja", "en"}
 LANGUAGE_NAMES = {"ja": "일본어", "en": "영어"}
 
 
+class RestoreUnavailableError(RuntimeError):
+    """Raised when no active GameKO patch state can be restored."""
+
+
 def _validate_source_language(value: str) -> str:
     if value not in SOURCE_LANGUAGES:
         raise ValueError(f"지원하지 않는 원문 언어 선택입니다: {value}")
@@ -251,6 +255,13 @@ def restore_game(detection: Detection, log: Log | None = None) -> int:
         count = unity_static.restore(root) + unity.restore(root)
     else:
         raise RuntimeError("지원 엔진을 찾지 못했습니다.")
+    if count <= 0:
+        raise RestoreUnavailableError(
+            "복원할 활성 백업 기록이 없습니다. 이미 원본 상태이거나, "
+            "gameko_project의 백업/상태 파일이 삭제된 상태입니다. "
+            "게임 파일이 여전히 변경돼 있다면 Steam의 '설치된 파일 무결성 확인' 등 "
+            "게임 배포처의 복구 기능을 사용하세요."
+        )
     if log:
         log(f"원본 상태로 복원했습니다 ({count:,}개 파일).")
     return count

@@ -3,6 +3,7 @@ from __future__ import annotations
 import configparser
 import ctypes
 import filecmp
+import filecmp
 import hashlib
 from importlib.resources import as_file, files
 import json
@@ -505,7 +506,31 @@ def restore(root: Path) -> int:
     state_path = project_path(root) / "unity_install.json"
     if not state_path.exists():
         return 0
-    state = json.loads(state_path.read_text(encoding="utf-8"))
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Unity XUnity 백업 정보가 손상되었습니다: {state_path}") from exc
+    if not isinstance(state, dict):
+        raise RuntimeError(f"Unity XUnity 백업 정보가 손상되었습니다: {state_path}")
+    backed_up_files = state.get("backed_up_files", [])
+    if not isinstance(backed_up_files, list) or not all(
+        isinstance(value, str) for value in backed_up_files
+    ):
+        raise RuntimeError(f"Unity XUnity 백업 경로가 손상되었습니다: {state_path}")
+    backup_root = project_path(root) / "backup" / "unity_overwritten"
+    invalid_backups = [
+        rel for rel in backed_up_files
+        if not rel or Path(rel).is_absolute() or ".." in Path(rel).parts
+    ]
+    if invalid_backups:
+        raise RuntimeError(f"Unity XUnity 백업 경로가 손상되었습니다: {invalid_backups[0]}")
+    missing_backups = [rel for rel in backed_up_files if not (backup_root / rel).is_file()]
+    if missing_backups:
+        sample = ", ".join(missing_backups[:3])
+        raise RuntimeError(
+            f"Unity XUnity 원본 백업이 없습니다 ({len(missing_backups):,}개): {sample}. "
+            "복원을 시작하지 않았습니다."
+        )
     removed = 0
     font_state = state.get("font", {})
     font_rel = font_state.get("path", "")
@@ -523,14 +548,16 @@ def restore(root: Path) -> int:
         if root.resolve() in path.parents and path.is_file():
             path.unlink()
             removed += 1
-    backup_root = project_path(root) / "backup" / "unity_overwritten"
-    for rel in state.get("backed_up_files", []):
+    for rel in backed_up_files:
         source = backup_root / rel
         target = (root / rel).resolve()
-        if source.is_file() and root.resolve() in target.parents:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-            removed += 1
+        if root.resolve() not in target.parents:
+            raise RuntimeError(f"게임 폴더 밖의 Unity 백업 경로입니다: {rel}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        if not filecmp.cmp(source, target, shallow=False):
+            raise RuntimeError(f"Unity XUnity 원본 복원 검증에 실패했습니다: {rel}")
+        removed += 1
     for rel in sorted(state.get("added_dirs", []), key=lambda value: len(Path(value).parts), reverse=True):
         directory = (root / rel).resolve()
         if root.resolve() not in directory.parents:

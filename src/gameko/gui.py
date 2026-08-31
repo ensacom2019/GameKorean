@@ -39,6 +39,15 @@ def format_duration(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02}"
 
 
+def completion_dialog(action: str, result: str) -> tuple[str, str]:
+    lead = {
+        "자동 번역": "자동 번역이 완료되었습니다.",
+        "원본 복원": "원본 복원이 완료되었습니다.",
+    }.get(action, f"{action} 작업이 완료되었습니다.")
+    detail = result.strip()
+    return f"{action} 완료", lead + (f"\n\n{detail}" if detail else "")
+
+
 def _error_chain(exc: BaseException) -> list[BaseException]:
     chain: list[BaseException] = []
     seen: set[int] = set()
@@ -61,6 +70,8 @@ def error_reason(exc: BaseException) -> str:
         return "번역 사이트가 요청을 거부했습니다(403). 일시 차단, 접속 지역 또는 서비스 정책이 원인일 수 있습니다."
     if "보호 토큰" in text:
         return "웹 번역기가 게임 제어 태그 보호 표식을 삭제했습니다. 최신 버전은 태그 앞뒤 문장만 나눠 번역하고 원본 태그를 그대로 복원해 자동 재시도합니다."
+    if "복원할 활성 백업 기록" in text or "백업 정보가 손상" in text or "원본 백업이 없습니다" in text:
+        return "GameKO의 복원 상태나 원본 백업이 없거나 손상됐습니다. 백업이 없는데 게임 파일이 변경된 경우 Steam 등의 파일 무결성 확인으로 원본을 다시 받으세요."
     if any(isinstance(item, PermissionError) for item in chain):
         return "파일 쓰기 권한이 없거나 게임/백신이 파일을 사용 중입니다. 게임을 종료하고 폴더 권한을 확인하세요."
     if any(isinstance(item, FileNotFoundError) for item in chain):
@@ -320,7 +331,7 @@ class App(tk.Tk):
         def worker():
             try:
                 result = function()
-                self._put("done", str(result or "완료"))
+                self._put("done", action, str(result) if result is not None else "완료")
             except Exception as exc:
                 full_traceback = traceback.format_exc()
                 report_path = write_error_report(
@@ -388,10 +399,13 @@ class App(tk.Tk):
                 elif kind == "done":
                     for button in self.action_buttons:
                         button.configure(state="normal")
-                    self.status.configure(text=values[0])
+                    action, result = values
+                    self.status.configure(text=result)
                     self._finish_clock("완료")
-                    self._log("완료: " + values[0])
-                    messagebox.showinfo("GameKO", values[0])
+                    self._log(f"완료({action}): {result}")
+                    title, message = completion_dialog(action, result)
+                    self.lift()
+                    messagebox.showinfo(title, message, parent=self)
                 elif kind == "error":
                     for button in self.action_buttons:
                         button.configure(state="normal")
@@ -468,9 +482,15 @@ class App(tk.Tk):
         self._run(task, action="번역 적용")
 
     def restore(self):
-        if not messagebox.askyesno("원본 복원", "GameKO가 만든 백업으로 원본 파일을 복원할까요?"):
+        if not messagebox.askyesno(
+            "원본 복원", "GameKO가 만든 백업으로 원본 파일을 복원할까요?",
+            parent=self,
+        ):
             return
-        self._run(lambda: restore_game(self._detection(), self._log), action="원본 복원")
+        def task():
+            count = restore_game(self._detection(), self._log)
+            return f"복원한 파일: {count:,}개"
+        self._run(task, action="원본 복원")
 
     def export_dialogue(self):
         try:

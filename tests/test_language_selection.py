@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from gameko import cli, gui
 from gameko.model import Detection
@@ -28,6 +28,27 @@ class SourceLanguageSelectionTests(unittest.TestCase):
         )
         self.assertEqual(gui.source_language_key(gui.DEFAULT_SOURCE_LANGUAGE_LABEL), "auto")
         self.assertEqual(gui.source_language_key("일본어만"), "ja")
+
+    def test_done_event_opens_action_specific_modal_popup(self):
+        app = object.__new__(gui.App)
+        app.events = gui.queue.Queue()
+        app.events.put(("done", ("자동 번역", "Unity 번역 및 적용 완료")))
+        app.action_buttons = []
+        app.status = Mock()
+        app._finish_clock = Mock()
+        app._log = Mock()
+        app.lift = Mock()
+        app._refresh_time_text = Mock()
+        app.after = Mock()
+
+        with patch.object(gui.messagebox, "showinfo") as showinfo:
+            gui.App._poll(app)
+
+        showinfo.assert_called_once_with(
+            "자동 번역 완료",
+            "자동 번역이 완료되었습니다.\n\nUnity 번역 및 적용 완료",
+            parent=app,
+        )
         self.assertEqual(gui.source_language_key("영어만"), "en")
         self.assertEqual(gui.source_language_key("알 수 없는 값"), "auto")
 

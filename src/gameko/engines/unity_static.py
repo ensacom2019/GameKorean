@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import filecmp
 import hashlib
 from importlib.resources import as_file, files
 import io
@@ -329,12 +330,37 @@ def _apply_forced_tmp_font(root: Path, detection: Detection, backup_root: Path) 
             except Exception as exc:
                 report["errors"].append(f"{relative}: {exc}")
 
-        for relative, output in staged.items():
+        # 폰트 파일도 원본 백업과 상태 기록을 먼저 끝낸 뒤 교체합니다.
+        # 강제 적용 도중 프로그램이 종료돼도 원본 복원 대상이 남습니다.
+        for relative in staged:
             target = _resolve_game_file(root, relative)
             backup = backup_root / Path(relative)
             if not backup.is_file():
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target, backup)
+        if staged:
+            current_state: dict[str, Any] = {}
+            state_path = _state_path(root)
+            if state_path.is_file():
+                try:
+                    loaded = json.loads(state_path.read_text(encoding="utf-8"))
+                    current_state = loaded if isinstance(loaded, dict) else {}
+                except (OSError, json.JSONDecodeError):
+                    current_state = {}
+            current_files = current_state.get("patched_files", [])
+            if not isinstance(current_files, list):
+                current_files = []
+            current_state.update({
+                "format": 1,
+                "engine": detection.engine,
+                "status": "applying_font",
+                "patched_files": sorted(
+                    {value for value in current_files if isinstance(value, str)} | set(staged)
+                ),
+            })
+            _save_state(root, current_state)
+        for relative, output in staged.items():
+            target = _resolve_game_file(root, relative)
             shutil.copy2(output, target)
 
     report["patched_files"] = sorted(staged)
@@ -989,6 +1015,19 @@ def apply(
     if not grouped and not force_tmp_font:
         return 0
     backup_root = project_path(root) / BACKUP_DIR
+    state_path = _state_path(root)
+    had_previous_state = state_path.is_file()
+    previous: dict[str, Any] = {}
+    if had_previous_state:
+        try:
+            previous = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+    previous_files = previous.get("patched_files", [])
+    if not isinstance(previous_files, list) or not all(
+        isinstance(value, str) for value in previous_files
+    ):
+        previous_files = []
     staged: dict[str, Path] = {}
     count = 0
     if grouped:
@@ -1026,12 +1065,26 @@ def apply(
 
             replaced: list[str] = []
             try:
-                for relative, output in staged.items():
+                # 원본 백업과 복원 상태를 먼저 기록합니다. 파일 교체 직후 프로그램이
+                # 종료되더라도 원본 복원 버튼이 대상 파일을 잃지 않게 합니다.
+                for relative in staged:
                     target = _resolve_game_file(root, relative)
                     backup = backup_root / Path(relative)
                     if not backup.is_file():
                         backup.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(target, backup)
+                provisional_files = sorted(set(previous_files) | set(staged))
+                _save_state(root, {
+                    "format": 1,
+                    "engine": detection.engine,
+                    "status": "applying",
+                    "patched_files": provisional_files,
+                    "translations": count,
+                    "forced_tmp_font_assets": int(previous.get("forced_tmp_font_assets", 0) or 0),
+                })
+                for relative, output in staged.items():
+                    target = _resolve_game_file(root, relative)
+                    backup = backup_root / Path(relative)
                     shutil.copy2(output, target)
                     replaced.append(relative)
             except Exception:
@@ -1039,6 +1092,10 @@ def apply(
                     backup = backup_root / Path(relative)
                     if backup.is_file():
                         shutil.copy2(backup, _resolve_game_file(root, relative))
+                if had_previous_state:
+                    _save_state(root, previous)
+                else:
+                    state_path.unlink(missing_ok=True)
                 raise
 
     font_files: list[str] = []
@@ -1046,17 +1103,6 @@ def apply(
     if force_tmp_font:
         font_files, font_assets = _apply_forced_tmp_font(root, detection, backup_root)
 
-    previous: dict[str, Any] = {}
-    if _state_path(root).is_file():
-        try:
-            previous = json.loads(_state_path(root).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            previous = {}
-    previous_files = previous.get("patched_files", [])
-    if not isinstance(previous_files, list) or not all(
-        isinstance(value, str) for value in previous_files
-    ):
-        previous_files = []
     patched_files = sorted(set(previous_files) | set(staged) | set(font_files))
     _save_state(root, {
         "format": 1,
@@ -1080,14 +1126,33 @@ def restore(root: Path) -> int:
     if state.get("format") != 1 or not isinstance(state.get("patched_files"), list):
         raise RuntimeError(f"지원하지 않는 Unity 정적 패치 백업 형식입니다: {state_path}")
     backup_root = project_path(root) / BACKUP_DIR
-    restored = 0
+    planned: list[tuple[Path, Path, str]] = []
+    missing: list[str] = []
+    seen: set[str] = set()
     for relative in state["patched_files"]:
         if not isinstance(relative, str):
             raise RuntimeError("Unity 정적 패치 백업 경로가 손상되었습니다.")
-        source = backup_root / Path(relative)
         target = _resolve_game_file(root, relative)
-        if source.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-            restored += 1
+        source = backup_root / Path(relative)
+        if relative in seen:
+            continue
+        seen.add(relative)
+        if not source.is_file():
+            missing.append(relative)
+        else:
+            planned.append((source, target, relative))
+    if missing:
+        sample = ", ".join(missing[:3])
+        raise RuntimeError(
+            f"Unity 원본 백업이 없습니다 ({len(missing):,}개): {sample}. "
+            "복원을 시작하지 않았습니다."
+        )
+    restored = 0
+    for source, target, relative in planned:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        if not filecmp.cmp(source, target, shallow=False):
+            raise RuntimeError(f"Unity 원본 복원 검증에 실패했습니다: {relative}")
+        restored += 1
+    state_path.unlink(missing_ok=True)
     return restored

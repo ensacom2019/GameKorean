@@ -13,9 +13,11 @@ import urllib.error
 import gameko
 from gameko.detect import detect_game
 from gameko.engines import gamemaker, rpgmaker, unity
-from gameko.gui import error_reason, format_duration, format_error_message, write_error_report
+from gameko.gui import completion_dialog, error_reason, format_duration, format_error_message, write_error_report
 from gameko.model import Detection, Entry, load_entries, save_project
-from gameko.service import apply_game, export_csv, find_game, import_csv
+from gameko.service import (
+    RestoreUnavailableError, apply_game, export_csv, find_game, import_csv, restore_game,
+)
 from gameko.text import protect_tokens, restore_tokens
 from gameko.translators import (
     GoogleWebTranslator, Translator, make_translator, translate_preserving_tokens,
@@ -41,6 +43,23 @@ class GameKoTests(unittest.TestCase):
         self.assertEqual(gameko.__creator__, "AINFORGE")
         self.assertGreater((assets / "AINFORGE.png").stat().st_size, 10_000)
         self.assertGreater((assets / "AINFORGE.ico").stat().st_size, 10_000)
+
+    def test_auto_and_restore_completion_dialogs_are_explicit(self):
+        self.assertEqual(
+            completion_dialog("자동 번역", "Unity 10개 적용"),
+            ("자동 번역 완료", "자동 번역이 완료되었습니다.\n\nUnity 10개 적용"),
+        )
+        self.assertEqual(
+            completion_dialog("원본 복원", "복원한 파일: 3개"),
+            ("원본 복원 완료", "원본 복원이 완료되었습니다.\n\n복원한 파일: 3개"),
+        )
+
+    def test_restore_without_active_backup_is_not_reported_as_success(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "CleanGame"
+            detection = self.make_rpg(root)
+            with self.assertRaisesRegex(RestoreUnavailableError, "복원할 활성 백업 기록"):
+                restore_game(detection)
 
     def test_all_engines_use_provided_noto_cjk_regular_otf(self):
         assets = Path(gameko.__file__).parent / "assets"

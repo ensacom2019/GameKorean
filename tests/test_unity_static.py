@@ -8,6 +8,7 @@ import struct
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import UnityPy
 
@@ -131,6 +132,29 @@ class UnityStaticTests(unittest.TestCase):
 
             self.assertEqual(unity_static.restore(root), 1)
             self.assertEqual(hashlib.sha256(bundle.read_bytes()).hexdigest(), original_hash)
+            self.assertFalse((project_path(root) / unity_static.STATE_FILE).exists())
+
+    def test_restore_refuses_missing_backup_before_changing_any_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "Demo"
+            target = root / "Demo_Data" / "StreamingAssets" / "dialogue.bundle"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b"patched")
+            project = project_path(root)
+            project.mkdir()
+            (project / unity_static.STATE_FILE).write_text(
+                json.dumps({
+                    "format": 1,
+                    "engine": "unity",
+                    "patched_files": ["Demo_Data/StreamingAssets/dialogue.bundle"],
+                }),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "원본 백업이 없습니다"):
+                unity_static.restore(root)
+            self.assertEqual(target.read_bytes(), b"patched")
+            self.assertTrue((project / unity_static.STATE_FILE).is_file())
 
     def test_streamingassets_json_is_patched_and_restored(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -193,9 +217,22 @@ class UnityStaticTests(unittest.TestCase):
                 "unity", str(root), "Mono", {"data_dir": str(root / "Demo_Data")}
             )
 
-            self.assertEqual(
-                unity_static.apply(root, detection, [], force_tmp_font=True), 0
-            )
+            real_copy = shutil.copy2
+
+            def copy_with_state_check(source, destination, *args, **kwargs):
+                if Path(destination).resolve() == target.resolve():
+                    state = json.loads(
+                        (project_path(root) / unity_static.STATE_FILE).read_text(encoding="utf-8")
+                    )
+                    self.assertIn(
+                        "Demo_Data/StreamingAssets/font.bundle", state["patched_files"]
+                    )
+                return real_copy(source, destination, *args, **kwargs)
+
+            with patch.object(unity_static.shutil, "copy2", side_effect=copy_with_state_check):
+                self.assertEqual(
+                    unity_static.apply(root, detection, [], force_tmp_font=True), 0
+                )
             report = json.loads(
                 (project_path(root) / unity_static.FONT_REPORT_FILE).read_text(encoding="utf-8")
             )
