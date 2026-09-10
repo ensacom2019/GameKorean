@@ -20,6 +20,9 @@ class DummyVar:
 
 
 class SourceLanguageSelectionTests(unittest.TestCase):
+    def test_app_does_not_override_tkinter_internal_options_method(self):
+        self.assertNotIn("_options", gui.App.__dict__)
+
     def test_gui_labels_map_to_service_values(self):
         self.assertEqual(
             gui.SOURCE_LANGUAGE_LABELS,

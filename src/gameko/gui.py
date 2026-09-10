@@ -462,7 +462,7 @@ class App(tk.Tk):
         except Exception as exc:
             self.engine.set(str(exc))
 
-    def _options(self):
+    def _translation_options(self):
         return {"base_url": self.base_url.get(), "model": self.model.get(), "api_key": "", "install_models": self.install_models.get()}
 
     def _provider_key(self):
@@ -478,7 +478,7 @@ class App(tk.Tk):
     def auto(self):
         source_language = self._source_language_key()
         self._run(lambda: automatic(
-            self.path.get(), self._provider_key(), self._options(), self._log, self._progress,
+            self.path.get(), self._provider_key(), self._translation_options(), self._log, self._progress,
             source_language=source_language,
             unity_static_test=self.unity_static_test.get(),
             force_tmp_font=self.force_tmp_font.get(),
@@ -495,7 +495,7 @@ class App(tk.Tk):
     def translate(self):
         source_language = self._source_language_key()
         self._run(lambda: translate_game(
-            Path(self._detection().root), self._provider_key(), self._options(), self._log, self._progress,
+            Path(self._detection().root), self._provider_key(), self._translation_options(), self._log, self._progress,
             source_language=source_language,
         ), action="문장 번역")
 
