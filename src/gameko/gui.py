@@ -39,6 +39,25 @@ def format_duration(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{secs:02}"
 
 
+def dialog_initial_directory(value: str, fallback: str | Path | None = None) -> str:
+    """Return an existing directory suitable for a native file dialog."""
+    fallback_path = Path(fallback or Path.cwd()).expanduser()
+    try:
+        fallback_path = fallback_path.resolve()
+    except OSError:
+        fallback_path = Path.cwd()
+    candidate = Path(value).expanduser() if value.strip() else fallback_path
+    try:
+        candidate = candidate.resolve()
+        if candidate.is_file():
+            candidate = candidate.parent
+        if candidate.is_dir():
+            return str(candidate)
+    except OSError:
+        pass
+    return str(fallback_path if fallback_path.is_dir() else Path.cwd())
+
+
 def completion_dialog(action: str, result: str) -> tuple[str, str]:
     lead = {
         "자동 번역": "자동 번역이 완료되었습니다.",
@@ -283,10 +302,20 @@ class App(tk.Tk):
         ttk.Label(outer, text="주의: 정식 번역 도구가 허용된 게임/개인 백업에만 사용하세요. DRM 해제는 지원하지 않습니다.", foreground="#777").pack(anchor="w", pady=(8, 0))
 
     def browse(self):
-        selected = filedialog.askdirectory(initialdir=self.path.get() or str(Path.cwd()))
-        if selected:
-            self.path.set(selected)
-            self.scan()
+        try:
+            self.lift()
+            selected = filedialog.askdirectory(
+                parent=self,
+                title="번역할 게임 폴더 선택",
+                initialdir=dialog_initial_directory(self.path.get()),
+                mustexist=True,
+            )
+            self.lift()
+            if selected:
+                self.path.set(str(Path(selected).resolve()))
+                self.scan()
+        except Exception as exc:
+            self._show_error("게임 폴더 선택", exc)
 
     def _put(self, kind, *values):
         self.events.put((kind, values))
@@ -312,7 +341,7 @@ class App(tk.Tk):
         )
         message = format_error_message(action, exc, report_path)
         self._log(message)
-        messagebox.showerror("GameKO 오류 원인", message)
+        messagebox.showerror("GameKO 오류 원인", message, parent=self)
 
     def _run(self, function, action: str = "작업"):
         for button in self.action_buttons:
@@ -413,7 +442,7 @@ class App(tk.Tk):
                     self.status.configure(text=first_line)
                     self._finish_clock("중단")
                     self._log("오류 원인:\n" + values[0])
-                    messagebox.showerror("GameKO 오류 원인", values[0])
+                    messagebox.showerror("GameKO 오류 원인", values[0], parent=self)
         except queue.Empty:
             pass
         self._refresh_time_text()

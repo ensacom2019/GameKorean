@@ -15,6 +15,9 @@ class DummyVar:
     def get(self):
         return self.value
 
+    def set(self, value):
+        self.value = value
+
 
 class SourceLanguageSelectionTests(unittest.TestCase):
     def test_gui_labels_map_to_service_values(self):
@@ -51,6 +54,42 @@ class SourceLanguageSelectionTests(unittest.TestCase):
         )
         self.assertEqual(gui.source_language_key("영어만"), "en")
         self.assertEqual(gui.source_language_key("알 수 없는 값"), "auto")
+
+    def test_folder_dialog_uses_parent_and_exe_parent_as_initial_directory(self):
+        root = Path.cwd().resolve()
+        app = object.__new__(gui.App)
+        app.path = DummyVar(str(root / "Sample Game.exe"))
+        app.lift = Mock()
+        app.scan = Mock()
+        app._show_error = Mock()
+
+        with (
+            patch.object(Path, "is_file", return_value=True),
+            patch.object(gui.filedialog, "askdirectory", return_value=str(root)) as choose,
+        ):
+            gui.App.browse(app)
+
+        choose.assert_called_once_with(
+            parent=app,
+            title="번역할 게임 폴더 선택",
+            initialdir=str(root),
+            mustexist=True,
+        )
+        self.assertEqual(app.path.get(), str(root))
+        app.scan.assert_called_once_with()
+
+    def test_folder_dialog_error_is_reported(self):
+        app = object.__new__(gui.App)
+        app.path = DummyVar(str(Path.cwd()))
+        app.lift = Mock()
+        app.scan = Mock()
+        app._show_error = Mock()
+        failure = RuntimeError("dialog failed")
+
+        with patch.object(gui.filedialog, "askdirectory", side_effect=failure):
+            gui.App.browse(app)
+
+        app._show_error.assert_called_once_with("게임 폴더 선택", failure)
 
     def test_cli_parser_accepts_source_language_for_workflow_commands(self):
         parser = cli._parser()

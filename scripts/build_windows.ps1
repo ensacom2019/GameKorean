@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location -LiteralPath $projectRoot
-python -m pip install -e '.[build]'
+python -m pip install --no-build-isolation -e '.[build]'
 python -m PyInstaller --noconfirm --clean "packaging/windows/GameKO.spec"
 Copy-Item -LiteralPath "$projectRoot\README.md" -Destination "$projectRoot\dist\GameKO\README.md" -Force
 New-Item -ItemType Directory -Force "$projectRoot\dist\GameKO\docs" | Out-Null
