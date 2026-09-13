@@ -815,14 +815,17 @@ def _binary_catalog_crc_records(raw: bytes) -> list[tuple[int, int, int, int]]:
         if end + 16 > len(raw):
             continue
         first_ref, second_ref, crc, size = struct.unpack_from("<IIII", raw, end)
-        # Addressables BinaryStorageBuffer bundle options point back to the
-        # nearby hash record. This rejects unrelated GUID/hash strings.
-        if (
-            second_ref != match.start()
-            or first_ref > match.start()
-            or match.start() - first_ref > 128
-            or size <= 0
-        ):
+        # BinaryStorageBuffer string records normally store a uint32 length
+        # immediately before the 32-byte hash. Older catalogs encountered in
+        # the wild instead point one of the following refs at the hash. Accept
+        # both layouts while still rejecting unrelated GUID strings.
+        length_prefixed = (
+            match.start() >= 4
+            and struct.unpack_from("<I", raw, match.start() - 4)[0] == 32
+        )
+        hash_referenced = second_ref in {match.start(), match.start() - 4}
+        nearby_reference = first_ref <= match.start() and match.start() - first_ref <= 128
+        if size <= 0 or not (length_prefixed or (hash_referenced and nearby_reference)):
             continue
         records.append((match.start(), end + 8, crc, size))
     return records
@@ -830,6 +833,10 @@ def _binary_catalog_crc_records(raw: bytes) -> list[tuple[int, int, int, int]]:
 
 def _patch_binary_catalog_crc(raw: bytes, bundle_name: str, original_size: int) -> bytes:
     records = _binary_catalog_crc_records(raw)
+    if not records:
+        raise ValueError(
+            f"Addressables catalog.bin에서 지원되는 CRC 레코드를 찾지 못했습니다: {bundle_name}"
+        )
     name = Path(bundle_name).name.encode("utf-8").lower()
     lowered = raw.lower()
     name_offsets: list[int] = []
@@ -844,23 +851,37 @@ def _patch_binary_catalog_crc(raw: bytes, bundle_name: str, original_size: int) 
         raise ValueError(f"Addressables catalog.bin에서 번들 이름을 찾지 못했습니다: {bundle_name}")
 
     exact_size = [record for record in records if record[3] == original_size]
-    candidates = exact_size or records
+    if exact_size:
+        # Bundle names and option records live in separate BinaryStorageBuffer
+        # tables in some Addressables versions, so physical proximity is not a
+        # reliable requirement. Bundle size is the strongest direct match. If
+        # multiple bundles share that size, disabling each matching CRC is
+        # harmless and avoids selecting the wrong entry.
+        selected = exact_size
+    else:
+        selected = []
+
     ranked: list[tuple[int, tuple[int, int, int, int]]] = []
-    for record in candidates:
+    for record in records:
         preceding = [offset for offset in name_offsets if offset <= record[0]]
         if not preceding:
             continue
         distance = record[0] - max(preceding)
         if distance <= 4096:
             ranked.append((distance, record))
-    if not ranked:
-        raise ValueError(f"Addressables CRC 레코드를 찾지 못했습니다: {bundle_name}")
-    ranked.sort(key=lambda item: item[0])
-    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
-        raise ValueError(f"Addressables CRC 레코드가 모호합니다: {bundle_name}")
-    _distance, (_hash_offset, crc_offset, _crc, _size) = ranked[0]
+    if not selected and ranked:
+        ranked.sort(key=lambda item: item[0])
+        if len(ranked) == 1 or ranked[0][0] != ranked[1][0]:
+            selected = [ranked[0][1]]
+    if not selected:
+        # Unity treats CRC 0 as disabled. This is the same fallback used by
+        # catalog patching tools: when separate catalog tables cannot be joined
+        # reliably, disable only the structurally verified bundle CRC records.
+        selected = records
+
     patched = bytearray(raw)
-    struct.pack_into("<I", patched, crc_offset, 0)
+    for _hash_offset, crc_offset, _crc, _size in selected:
+        struct.pack_into("<I", patched, crc_offset, 0)
     return bytes(patched)
 
 

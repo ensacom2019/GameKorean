@@ -44,6 +44,48 @@ class UnityStaticTests(unittest.TestCase):
         self.assertEqual(records[0][2], 0)
         self.assertEqual(records[0][3], 5925)
 
+    def test_length_prefixed_catalog_record_matches_by_size_across_separate_tables(self):
+        bundle_name = "localization-string-tables-japanese_assets_all.bundle"
+        prefix = bundle_name.encode("utf-8") + b"\0" * 5000
+        hash_value = b"abcdef0123456789abcdef0123456789"
+        raw = prefix + struct.pack("<I", 32) + hash_value + struct.pack(
+            "<IIII", 17, 29, 0x5BFCBB54, 123456
+        )
+
+        patched = unity_static._patch_binary_catalog_crc(raw, bundle_name, 123456)
+        records = unity_static._binary_catalog_crc_records(patched)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0][2], 0)
+        self.assertEqual(records[0][3], 123456)
+
+    def test_catalog_crc_fallback_disables_only_structurally_verified_records(self):
+        bundle_name = "localization-string-tables-japanese_assets_all.bundle"
+        prefix = bundle_name.encode("utf-8") + b"\0" * 5000
+        first = struct.pack("<I", 32) + b"0123456789abcdef0123456789abcdef" + struct.pack(
+            "<IIII", 11, 22, 0x11111111, 3000
+        )
+        unrelated = b"not-a-record-0123456789abcdef0123456789abcdef" + struct.pack(
+            "<IIII", 0, 0, 0x33333333, 5000
+        )
+        second = struct.pack("<I", 32) + b"fedcba9876543210fedcba9876543210" + struct.pack(
+            "<IIII", 33, 44, 0x22222222, 4000
+        )
+        raw = prefix + first + unrelated + second
+
+        patched = unity_static._patch_binary_catalog_crc(raw, bundle_name, 9999)
+        records = unity_static._binary_catalog_crc_records(patched)
+
+        self.assertEqual([record[2] for record in records], [0, 0])
+        self.assertIn(struct.pack("<I", 0x33333333), patched)
+
+    def test_catalog_without_verified_crc_record_is_rejected(self):
+        bundle_name = "localization-string-tables-japanese_assets_all.bundle"
+        raw = bundle_name.encode("utf-8") + b"-0123456789abcdef0123456789abcdef"
+
+        with self.assertRaisesRegex(ValueError, "지원되는 CRC 레코드"):
+            unity_static._patch_binary_catalog_crc(raw, bundle_name, 123456)
+
     def test_unity_localization_string_table_rows_are_extracted(self):
         data = SimpleNamespace(
             m_LocaleId=SimpleNamespace(m_Code="ja-JP"),
